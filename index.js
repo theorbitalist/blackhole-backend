@@ -7,13 +7,23 @@ require("dotenv").config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+/* ===============================
+   ✅ CORS — MUST BE FIRST
+================================ */
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type"]
+}));
 
-app.use(
-  cors({
-    origin: "*",
-  })
-);
+app.use(express.json());
 
+/* ===============================
+   HEALTH CHECK (IMPORTANT FOR RENDER)
+================================ */
+app.get("/", (req, res) => {
+  res.send("🚀 Backend is running");
+});
 
 /* ===============================
    GET: /api/astronauts
@@ -22,43 +32,35 @@ app.get("/api/astronauts", async (req, res) => {
   try {
     const ASTRONAUTS_IN_SPACE_API = process.env.ASTRONAUTS_IN_SPACE_API;
 
+    if (!ASTRONAUTS_IN_SPACE_API) {
+      return res.status(500).json({
+        success: false,
+        message: "Missing Scrapestack API key"
+      });
+    }
+
     const targetUrl = "https://whoisinspace.com/";
-    const scrapeUrl = `http://api.scrapestack.com/scrape?access_key=${ASTRONAUTS_IN_SPACE_API}&url=${encodeURIComponent(
-      targetUrl
-    )}`;
+    const scrapeUrl = `http://api.scrapestack.com/scrape?access_key=${ASTRONAUTS_IN_SPACE_API}&url=${encodeURIComponent(targetUrl)}`;
 
     const response = await fetch(scrapeUrl);
     const html = await response.text();
 
     const $ = cheerio.load(html);
 
-    /* ===============================
-       Extract Mission Dates (once)
-    ================================ */
     const missionDates = [...html.matchAll(/new Date\("([^"]+)"\)/g)];
 
-    /* ===============================
-       Extract Astronauts (ALIGNED)
-    ================================ */
     const astronauts = [];
 
     $("h2").each((i, el) => {
       const name = $(el).text().trim();
-
-      // drop invalid / long names
       if (!name || name.length > 50) return;
 
-      const image =
-        $("img[data-image]").eq(i).attr("src") || null;
+      const image = $("img[data-image]").eq(i).attr("src") || null;
+      const missionStart = missionDates[i]
+        ? new Date(missionDates[i][1]).toISOString()
+        : null;
 
-      const missionStart =
-        missionDates[i] ? new Date(missionDates[i][1]) : null;
-
-      astronauts.push({
-        name,
-        image,
-        missionStart,
-      });
+      astronauts.push({ name, image, missionStart });
     });
 
     res.json({
@@ -66,8 +68,8 @@ app.get("/api/astronauts", async (req, res) => {
       count: astronauts.length,
       data: astronauts,
     });
-  } catch (error) {
-    console.error(error);
+  } catch (err) {
+    console.error(err);
     res.status(500).json({
       success: false,
       message: "Failed to fetch astronauts",
@@ -76,5 +78,5 @@ app.get("/api/astronauts", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
 });
